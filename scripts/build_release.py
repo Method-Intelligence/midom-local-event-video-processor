@@ -250,7 +250,12 @@ def write_launchers(stage_dir: Path) -> None:
     (stage_dir / "start-local-processor.bat").write_text(
         "@echo off\r\n"
         "setlocal\r\n"
-        f"\"{windows_target}\" start %*\r\n",
+        f"\"{windows_target}\" start %*\r\n"
+        "if errorlevel 1 (\r\n"
+        "  echo.\r\n"
+        "  echo The processor stopped with an error. You can copy the message above for support.\r\n"
+        "  pause\r\n"
+        ")\r\n",
         encoding="utf-8",
     )
 
@@ -261,9 +266,13 @@ def write_quickstart(stage_dir: Path, build: FfmpegBuild) -> None:
         f"{'=' * len(DISPLAY_NAME)}\n\n"
         "This bundle includes FFmpeg and FFprobe for local Event Video Processing.\n\n"
         "First run:\n"
-        "  start-local-processor --url https://midombot.com --code YOUR_PAIRING_CODE --name \"Event Processor\"\n\n"
+        "  Windows: open start-local-processor.bat\n"
+        "  Linux: ./start-local-processor.sh\n\n"
+        "The processor will ask for the Midom address, pairing code, and processor name.\n"
+        "Most users can accept the suggested Midom address: https://midombot.com\n\n"
+        "If your coordinator gives you one complete command to paste, use that exact command.\n\n"
         "After the first successful pairing:\n"
-        "  start-local-processor\n\n"
+        "  Open the same starter file again. You usually do not need a new pairing code.\n\n"
         "Windows:\n"
         "  Use start-local-processor.bat from Command Prompt or PowerShell.\n\n"
         "Linux:\n"

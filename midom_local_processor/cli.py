@@ -70,13 +70,29 @@ def cmd_start(args: argparse.Namespace) -> int:
     try:
         load_config()
     except FileNotFoundError:
+        if (not args.url or not args.code) and sys.stdin.isatty():
+            _prompt_for_first_run(args)
         if not args.url or not args.code:
-            log("No local pairing exists. Provide --url and --code to pair this processor before running.")
+            log("No local pairing exists. Start again with a Midom address and pairing code.")
             return 2
         pair_result = cmd_pair(args)
         if pair_result != 0:
             return pair_result
     return cmd_run(args)
+
+
+def _prompt_for_first_run(args: argparse.Namespace) -> None:
+    print("First-time Midom Local Event Video Processor setup.")
+    print("Use the pairing code provided by your Midom project administrator.")
+    default_url = args.url or "https://midombot.com"
+    entered_url = input(f"Midom address [{default_url}]: ").strip()
+    args.url = entered_url or default_url
+    entered_code = input("Pairing code: ").strip()
+    if entered_code:
+        args.code = entered_code
+    default_name = args.name or socket.gethostname()
+    entered_name = input(f"Processor name [{default_name}]: ").strip()
+    args.name = entered_name or default_name
 
 
 def cmd_run(_args: argparse.Namespace) -> int:

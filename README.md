@@ -4,7 +4,7 @@ Midom Local Event Video Processor is a small helper app for Midom Video Collecti
 
 If you are helping run a campaign, PAC, advocacy group, public-interest project, community event, or field media collection effort, you may be asked to run this app on an office computer during an event window.
 
-You do not need to understand video editing, servers, FFmpeg, GitHub, or AI media tools to use it.
+You do not need special media or software training to use it.
 
 ## What This Does
 
@@ -22,7 +22,7 @@ Midom still controls review, moderation, approval, publishing, public galleries,
 
 Video Collection Events can be bursty. A team may have quiet periods followed by many phone uploads during a rally, county fair, public meeting, canvassing day, ride, concert, volunteer shift, or community outreach event.
 
-Those videos can be large. Processing them on Midom's hosted server works, but local office computers can help carry the load. If your computer is trusted by the project and has a stable internet connection, it can act like an extra processing station during the event.
+Those videos can be large. Processing them on Midom's hosted system works, but local office computers can help carry the load. If your computer is trusted by the project and has a stable internet connection, it can act like an extra processing station during the event.
 
 This helps the organization keep the energy of live collection while preserving the safety pause: videos are processed quickly, but still reviewed before public use.
 
@@ -38,9 +38,9 @@ macOS packages are not supported in the first release.
 
 ## Downloading The App
 
-If someone sends you a GitHub release link, download the file from the release page.
+Use the download link provided by your project administrator or event coordinator.
 
-Do not use the green `Code` button. Do not clone the repository. Do not install Git.
+If that link opens a page with a green `Code` button, ignore that button. Use the download file your coordinator pointed you to.
 
 Use the release package meant for your computer:
 
@@ -53,27 +53,39 @@ After downloading, unzip or extract the package into a normal folder, such as yo
 
 Your Midom project administrator will give you a pairing code. Pairing codes are short-lived setup codes, so use the code soon after it is created.
 
-You may be given one complete command to paste. If so, copy the whole command exactly.
-
-If you are setting it up yourself, open Command Prompt or PowerShell on Windows, or a terminal on Linux, in the extracted processor folder.
+Open the starter file in the extracted processor folder.
 
 Windows:
 
-```bat
-start-local-processor.bat --url https://midombot.com --code YOUR_PAIRING_CODE --name "Event Processor"
+```text
+start-local-processor.bat
 ```
 
 Linux:
 
-```bash
-./start-local-processor.sh --url https://midombot.com --code YOUR_PAIRING_CODE --name "Event Processor"
+```text
+start-local-processor.sh
 ```
 
-Replace `YOUR_PAIRING_CODE` with the code from Midom.
+The first time you run it, the processor will ask for:
+
+- Midom address
+- pairing code
+- processor name
+
+For the Midom address, most users can accept the suggested value:
+
+```text
+https://midombot.com
+```
+
+Paste the pairing code exactly as it was given to you.
+
+If your coordinator gives you one complete command to paste instead, copy the whole command exactly.
 
 After it starts, leave the window open. The app will wait for video processing jobs. Seeing messages that there are no jobs is normal when nobody has uploaded a video waiting for local processing.
 
-If opening a command prompt or terminal is unfamiliar, ask the person coordinating the Midom event to help with this first setup step.
+If this first setup step is unfamiliar, ask the person coordinating the Midom event to help.
 
 ## Starting Later
 
@@ -107,11 +119,11 @@ The app may show messages like:
 - candidate poll returned no jobs
 - starting claimed job
 - downloading input
-- running FFmpeg
+- processing video
 - uploading processed MP4
 - job completed
 
-Those messages are normal. If the app reports an error repeatedly, copy the last few log lines and send them to the technical person supporting the event.
+Those messages are normal. If the app reports an error repeatedly, copy the last few log lines and send them to the person supporting the event.
 
 ## What This App Does Not Do
 
