@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "midom-local-processor"
+version = "0.1.0"
+description = "Standalone local FFmpeg processing worker for Midom Event Video Processing."
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dependencies = [
+  "Pillow>=10",
+  "requests>=2.31",
+]
+
+[project.optional-dependencies]
+release = [
+  "pyinstaller>=6.0",
+]
+
+[project.scripts]
+midom-local-processor = "midom_local_processor.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["midom_local_processor*"]
+
+[tool.setuptools.package-data]
+midom_local_processor = [
+  "vendor/ffmpeg/README.md",
+  "vendor/ffmpeg/linux-x86_64/*",
+  "vendor/ffmpeg/windows-x86_64/*",
+]

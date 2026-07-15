@@ -1,0 +1,49 @@
+from __future__ import annotations
+
+import ipaddress
+
+APP_ID = "midom-local-media-processor"
+USER_AGENT = f"{APP_ID}/0.1.0"
+
+REQUEST_TIMEOUT_SECONDS = 30
+UPLOAD_TIMEOUT_SECONDS = 120
+POLL_INTERVAL_SECONDS = 5
+HEARTBEAT_INTERVAL_SECONDS = 15
+PROGRESS_INTERVAL_SECONDS = 2
+
+MAX_IMAGE_BYTES = 50 * 1024 * 1024
+MAX_EVENT_VIDEO_INPUT_BYTES = 1_073_741_824
+MAX_EVENT_VIDEO_OUTPUT_BYTES = 536_870_912
+MAX_EVENT_VIDEO_DURATION_SECONDS = 600
+MAX_EVENT_ASSET_PIXELS = 33_177_600
+MIN_EVENT_ASSET_DIMENSION = 16
+
+EVENT_VIDEO_PROCESSOR_ID = "event_video_ffmpeg_processor"
+EVENT_VIDEO_PROCESSING_TASK = "event_video_processing"
+EVENT_VIDEO_OUTPUT_PROFILE = "mobile_public_720p"
+EVENT_VIDEO_BUMPER_SECONDS = 2
+EVENT_VIDEO_H264_ENCODER = "libx264"
+EVENT_VIDEO_X264_CRF = 21
+EVENT_VIDEO_X264_MAXRATE = "8M"
+EVENT_VIDEO_X264_BUFSIZE = "16M"
+EVENT_VIDEO_TIMEOUT_BASE_SECONDS = 120
+EVENT_VIDEO_TIMEOUT_MULTIPLIER = 12
+EVENT_VIDEO_TIMEOUT_MAX_SECONDS = 7200
+
+ALLOWED_EVENT_SOURCE_VIDEO_MIME_TYPES = {"video/mp4", "video/quicktime"}
+ALLOWED_EVENT_OVERLAY_MIME_TYPES = {"image/png"}
+ALLOWED_EVENT_BUMPER_MIME_TYPES = {"image/png", "image/jpeg", "image/webp"}
+ALLOWED_EVENT_INPUT_KINDS = {"source_video", "overlay_png", "bumper_image"}
+ALLOWED_VIDEO_OUTPUT_MIME_TYPES = {"video/mp4"}
+ALLOWED_VIDEO_SUFFIXES = {".mp4"}
+ALLOWED_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
+
+MIME_EXTENSION = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+    "video/mp4": ".mp4",
+    "video/quicktime": ".mov",
+}
+
+SHARED_DEV_NETWORK = ipaddress.ip_network("100.64.0.0/10")

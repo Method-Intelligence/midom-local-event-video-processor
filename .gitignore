@@ -1,0 +1,12 @@
+__pycache__/
+.pytest_cache/
+.venv/
+build/
+dist/
+*.egg-info/
+.release-cache/
+release/
+midom_local_processor/vendor/ffmpeg/linux-x86_64/ffmpeg
+midom_local_processor/vendor/ffmpeg/linux-x86_64/ffprobe
+midom_local_processor/vendor/ffmpeg/windows-x86_64/ffmpeg.exe
+midom_local_processor/vendor/ffmpeg/windows-x86_64/ffprobe.exe
