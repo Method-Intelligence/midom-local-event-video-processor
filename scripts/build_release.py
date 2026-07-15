@@ -223,6 +223,7 @@ def stage_executable_bundle(stage_dir: Path, ffmpeg_dir: Path, build: FfmpegBuil
         str(PYINSTALLER_BUILD_DIR),
         "--add-data",
         f"{ffmpeg_dir}{add_data_sep}{data_dest}",
+        *pyinstaller_runtime_args(add_data_sep),
         str(ROOT / "midom_local_processor" / "pyinstaller_entry.py"),
     ]
     run(command)
@@ -231,6 +232,57 @@ def stage_executable_bundle(stage_dir: Path, ffmpeg_dir: Path, build: FfmpegBuil
         raise FileNotFoundError(produced_dir)
     shutil.copytree(produced_dir, stage_dir / APP_NAME)
     write_launchers(stage_dir)
+
+
+def pyinstaller_runtime_args(add_data_sep: str) -> list[str]:
+    args = [
+        "--hidden-import",
+        "ssl",
+        "--hidden-import",
+        "_ssl",
+        "--hidden-import",
+        "_hashlib",
+    ]
+    if os.name != "nt":
+        return args
+
+    for dll_path in windows_ssl_runtime_files():
+        args.extend(["--add-binary", f"{dll_path}{add_data_sep}."])
+    return args
+
+
+def windows_ssl_runtime_files() -> list[Path]:
+    search_roots = []
+    for text in {sys.prefix, sys.base_prefix, sys.exec_prefix, str(Path(sys.executable).resolve().parent)}:
+        if text:
+            root = Path(text)
+            search_roots.extend(
+                [
+                    root,
+                    root / "DLLs",
+                    root / "Library" / "bin",
+                    root.parent,
+                    root.parent / "Library" / "bin",
+                ]
+            )
+
+    patterns = [
+        "_ssl*.pyd",
+        "_hashlib*.pyd",
+        "libssl*.dll",
+        "libcrypto*.dll",
+        "ssleay32.dll",
+        "libeay32.dll",
+    ]
+    found: dict[str, Path] = {}
+    for root in search_roots:
+        if not root.is_dir():
+            continue
+        for pattern in patterns:
+            for candidate in root.glob(pattern):
+                if candidate.is_file():
+                    found[str(candidate.resolve()).lower()] = candidate.resolve()
+    return sorted(found.values(), key=lambda path: str(path).lower())
 
 
 def write_launchers(stage_dir: Path) -> None:
