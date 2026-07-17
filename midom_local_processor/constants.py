@@ -3,7 +3,7 @@ from __future__ import annotations
 import ipaddress
 
 APP_ID = "midom-local-media-processor"
-USER_AGENT = f"{APP_ID}/0.1.0"
+USER_AGENT = f"{APP_ID}/0.1.1"
 
 REQUEST_TIMEOUT_SECONDS = 30
 UPLOAD_TIMEOUT_SECONDS = 120

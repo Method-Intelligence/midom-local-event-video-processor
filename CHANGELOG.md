@@ -8,6 +8,12 @@ This project uses release tags such as `v0.1.0`.
 
 No unreleased changes yet.
 
+## [0.1.1] - 2026-07-17
+
+- Changed Event Video Processing main-video normalization to scale-to-cover with center crop instead of fit-and-pad, removing black letterboxing from public event output.
+- Updated advertised Event Video Processing capabilities to report `scale_to_cover_crop`.
+- Added staff-friendly runtime controls: `Q` stops for now and keeps the saved pairing; `T` disconnects after confirmation and removes local credentials.
+
 ## [0.1.0] - 2026-07-16
 
 Initial beta release.
