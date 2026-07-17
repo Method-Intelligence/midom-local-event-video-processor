@@ -50,7 +50,7 @@ def build_capabilities() -> dict[str, Any]:
                 "landscape": {"width": 1280, "height": 720},
                 "portrait": {"width": 720, "height": 1280},
             },
-            "scaling_mode": "scale_to_fit_pad",
+            "scaling_mode": "scale_to_cover_crop",
         })
     return {
         "schema_version": 1,
