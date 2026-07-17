@@ -150,7 +150,7 @@ class EventVideoProcessor:
                 "processor_id": EVENT_VIDEO_PROCESSOR_ID,
                 "output_profile": EVENT_VIDEO_OUTPUT_PROFILE,
                 "ffmpeg_encoder": EVENT_VIDEO_H264_ENCODER,
-                "scaling_mode": "scale_to_fit_pad",
+                "scaling_mode": "scale_to_cover_crop",
                 "source_duration_seconds": source_duration,
                 "requested_max_duration_seconds": requested_max_duration or None,
                 "output_duration_seconds": float(output_metadata.get("duration_seconds") or 0.0),
@@ -209,8 +209,8 @@ class EventVideoProcessor:
             overlay_input_index = next_input_index
         filter_parts = [
             (
-                f"[0:v]scale={output_width}:{output_height}:force_original_aspect_ratio=decrease,"
-                f"pad={output_width}:{output_height}:(ow-iw)/2:(oh-ih)/2:color=black,"
+                f"[0:v]scale={output_width}:{output_height}:force_original_aspect_ratio=increase,"
+                f"crop={output_width}:{output_height},"
                 "setsar=1,format=rgba[vbase]"
             ),
             f"[{audio_input_label}]aresample=48000,aformat=channel_layouts=stereo[aout]",
