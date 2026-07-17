@@ -87,6 +87,14 @@ After it starts, leave the window open. The app will wait for video processing j
 
 If this first setup step is unfamiliar, ask the person coordinating the Midom event to help.
 
+## Stopping The App
+
+When the event is over, click in the processor window, type `Q`, and press Enter.
+
+This stops the processor for now and keeps the saved pairing on your computer. The next time you open the same starter file, it can usually start again without a new pairing code.
+
+Only type `T` if you want to disconnect this computer from the Midom project. The app will ask you to confirm by typing `TERMINATE`. After that, the saved pairing is removed and you will need a new pairing code before this computer can process videos again.
+
 ## Starting Later
 
 After the first successful pairing, you usually do not need a new pairing code. Start the same processor again with:
@@ -112,6 +120,8 @@ If Midom says the worker token expired, was revoked, or is no longer allowed, as
 ## During An Event
 
 Keep the processor window open while the event is active.
+
+To stop after the event, type `Q` and press Enter in the processor window.
 
 The app may show messages like:
 

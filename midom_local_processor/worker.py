@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import signal
+import sys
 import tempfile
 import threading
 import time
@@ -8,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .capabilities import build_capabilities
-from .config import save_config
+from .config import delete_config, save_config
 from .constants import (
     ALLOWED_EVENT_BUMPER_MIME_TYPES,
     ALLOWED_EVENT_INPUT_KINDS,
@@ -48,9 +49,19 @@ class LocalProcessorWorker:
         self.active_job_id: int | None = None
         self.active_process: LocalProcessJob | None = None
         self.last_heartbeat_at = 0.0
+        self.shutdown_action = "quit"
+        self._shutdown_lock = threading.Lock()
 
     def request_stop(self, *_args: Any) -> None:
+        self._set_shutdown_action("quit")
         log("Stop requested; finishing cancellation path.")
+        self.stop_event.set()
+        if self.active_process is not None:
+            self.active_process.cancel()
+
+    def request_disconnect(self) -> None:
+        self._set_shutdown_action("disconnect")
+        log("Disconnect requested; finishing cancellation path.")
         self.stop_event.set()
         if self.active_process is not None:
             self.active_process.cancel()
@@ -61,6 +72,7 @@ class LocalProcessorWorker:
         self.update_capabilities(allow_method_not_allowed=True)
         log(f"Worker loop started; worker_id={self.config.worker_id} project_id={self.config.project_id}.")
         log("Waiting for Event Video Processing jobs.")
+        self._start_interactive_controls()
         while not self.stop_event.is_set():
             now = time.monotonic()
             if now - self.last_heartbeat_at >= HEARTBEAT_INTERVAL_SECONDS:
@@ -75,11 +87,66 @@ class LocalProcessorWorker:
             except Exception as exc:
                 log(f"Worker loop poll failed: {exc}")
             self.stop_event.wait(POLL_INTERVAL_SECONDS)
-        try:
-            self.api.heartbeat(status="paused", accepting=False, active_job_id=None, message="Local Event Video Processor stopped.")
-        except Exception as exc:
-            log(f"Final heartbeat failed: {exc}")
+        if self._get_shutdown_action() == "disconnect":
+            self._disconnect_and_delete_config()
+        else:
+            try:
+                self.api.heartbeat(status="paused", accepting=False, active_job_id=None, message="Local Event Video Processor stopped.")
+            except Exception as exc:
+                log(f"Final heartbeat failed: {exc}")
         log("Worker loop stopped.")
+
+    def _set_shutdown_action(self, action: str) -> None:
+        with self._shutdown_lock:
+            if action == "disconnect" or self.shutdown_action != "disconnect":
+                self.shutdown_action = action
+
+    def _get_shutdown_action(self) -> str:
+        with self._shutdown_lock:
+            return self.shutdown_action
+
+    def _start_interactive_controls(self) -> None:
+        if not sys.stdin.isatty():
+            return
+        log("Controls: type Q then Enter to stop for now. Type T then Enter to disconnect this processor.")
+        threading.Thread(target=self._interactive_control_loop, name="midom-worker-controls", daemon=True).start()
+
+    def _interactive_control_loop(self) -> None:
+        while not self.stop_event.is_set():
+            try:
+                command = input("Command [Q=quit, T=terminate]: ").strip().lower()
+            except (EOFError, OSError):
+                return
+            if not command:
+                continue
+            if command in {"q", "quit"}:
+                log("Quit command received. The saved pairing will be kept for next time.")
+                self.request_stop()
+                return
+            if command in {"t", "terminate", "disconnect"}:
+                print()
+                print("This will disconnect this local processor from Midom and remove its saved pairing.")
+                print("You will need a new pairing code to use this computer again.")
+                try:
+                    confirmation = input("Type TERMINATE to continue: ").strip()
+                except (EOFError, OSError):
+                    return
+                if confirmation == "TERMINATE":
+                    log("Terminate command confirmed. This processor will disconnect and remove local credentials.")
+                    self.request_disconnect()
+                    return
+                log("Terminate command cancelled. The processor will keep running.")
+                continue
+            log("Unknown command. Type Q then Enter to stop for now, or T then Enter to disconnect this processor.")
+
+    def _disconnect_and_delete_config(self) -> None:
+        try:
+            self.api.disconnect()
+            log(f"Remote disconnect accepted; worker_id={self.config.worker_id}.")
+        except Exception as exc:
+            log(f"Remote disconnect failed; worker may remain visible in Midom: {exc}")
+        delete_config()
+        log("Local processor credentials removed. A new pairing code is required before this computer can process again.")
 
     def update_capabilities(self, *, allow_method_not_allowed: bool = False) -> None:
         capabilities = build_capabilities()
