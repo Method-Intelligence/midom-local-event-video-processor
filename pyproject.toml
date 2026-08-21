@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "midom-local-processor"
 version = "0.1.1"
-description = "Standalone local FFmpeg processing worker for Midom Event Video Processing."
+description = "Standalone local FFmpeg worker for deterministic Midom video media processing."
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
 dependencies = [

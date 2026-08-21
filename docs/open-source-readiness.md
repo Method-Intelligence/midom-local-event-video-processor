@@ -23,6 +23,7 @@ Use this checklist before making the repository public or publishing a release.
 - Windows release bundle builds on Windows.
 - Windows release executable starts and shows help.
 - A release-bundle live test completes at least one Event Video Processing job.
+- Deterministic Storyboard FFmpeg Processing paths have unit or smoke coverage.
 - Restart without a new pairing code works after first pairing.
 
 ## Security
@@ -54,4 +55,3 @@ Before wide use, Midom should treat local processors as untrusted project-scoped
 - Windows release may trigger SmartScreen or antivirus warnings until the project has reputation or code signing.
 - Local processors are appropriate for trusted project/event participants, not arbitrary public volunteers.
 - Once a local processor legitimately downloads claimed job inputs, Midom cannot technically prevent that local machine from copying them elsewhere.
-

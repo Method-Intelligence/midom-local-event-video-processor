@@ -40,6 +40,14 @@ class DownloadedInput:
     metadata: dict[str, Any] | None = None
     width: int | None = None
     height: int | None = None
+    category: str = ""
+    order: int = 0
+    role: str = ""
+    decoded_format: str = ""
+    duration_seconds: float | None = None
+    dbfileid: int | None = None
+    dbfile_id: int | None = None
+    file_id: int | None = None
 
 
 @dataclass(frozen=True)

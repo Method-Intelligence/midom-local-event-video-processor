@@ -40,3 +40,119 @@ def test_candidate_rejects_wrong_worker():
         "family": "media_processing",
     }
     assert "worker_id mismatch" in candidate_incompatibility_reason(candidate, config())
+
+
+def test_candidate_compatible_storyboard_ffmpeg_job():
+    candidate = {
+        "job_id": 100,
+        "worker_id": 10,
+        "org_id": 1,
+        "project_id": 2,
+        "requested_by_user_id": 3,
+        "media_type": "video",
+        "family": "media_processing",
+        "processing_task": "storyboard_ffmpeg_processing",
+        "processor_id": "storyboard_ffmpeg_processor",
+        "summary": {
+            "operation_type": "replace_video_soundtrack",
+            "output_count": 1,
+            "output_format": "mp4",
+            "video_input_count": 1,
+            "audio_input_count": 1,
+        },
+    }
+    assert candidate_incompatibility_reason(candidate, config()) is None
+
+
+def test_candidate_rejects_storyboard_soundtrack_without_audio():
+    candidate = {
+        "job_id": 100,
+        "worker_id": 10,
+        "org_id": 1,
+        "project_id": 2,
+        "requested_by_user_id": 3,
+        "media_type": "video",
+        "family": "media_processing",
+        "processing_task": "storyboard_ffmpeg_processing",
+        "processor_id": "storyboard_ffmpeg_processor",
+        "summary": {
+            "operation_type": "replace_video_soundtrack",
+            "video_input_count": 1,
+            "audio_input_count": 0,
+        },
+    }
+    assert "soundtrack audio" in candidate_incompatibility_reason(candidate, config())
+
+
+def test_candidate_compatible_storyboard_local_one_image():
+    candidate = {
+        "job_id": 101,
+        "worker_id": 10,
+        "org_id": 1,
+        "project_id": 2,
+        "requested_by_user_id": 3,
+        "media_type": "video",
+        "family": "media_processing",
+        "processing_task": "storyboard_ffmpeg_processing",
+        "processor_id": "storyboard_ffmpeg_processor",
+        "summary": {
+            "operation_type": "multicam_card_local_video_take",
+            "render_mode": "one_image",
+            "image_input_count": 1,
+            "start_image_count": 1,
+            "end_image_count": 0,
+            "audio_input_count": 0,
+            "output_count": 1,
+            "output_format": "mp4",
+        },
+    }
+    assert candidate_incompatibility_reason(candidate, config()) is None
+
+
+def test_candidate_compatible_storyboard_local_voice_over_video():
+    candidate = {
+        "job_id": 102,
+        "worker_id": 10,
+        "org_id": 1,
+        "project_id": 2,
+        "requested_by_user_id": 3,
+        "media_type": "video",
+        "family": "media_processing",
+        "processing_task": "storyboard_ffmpeg_processing",
+        "processor_id": "storyboard_ffmpeg_processor",
+        "summary": {
+            "operation_type": "mediastoryboard_card_local_video_take",
+            "render_mode": "voice_over_video",
+            "video_input_count": 1,
+            "audio_input_count": 1,
+            "scene_audio_count": 1,
+            "duration_seconds": 4.0,
+            "output_count": 1,
+            "output_format": "mp4",
+        },
+    }
+    assert candidate_incompatibility_reason(candidate, config()) is None
+
+
+def test_candidate_rejects_storyboard_local_voice_over_video_transition():
+    candidate = {
+        "job_id": 103,
+        "worker_id": 10,
+        "org_id": 1,
+        "project_id": 2,
+        "requested_by_user_id": 3,
+        "media_type": "video",
+        "family": "media_processing",
+        "processing_task": "storyboard_ffmpeg_processing",
+        "processor_id": "storyboard_ffmpeg_processor",
+        "summary": {
+            "operation_type": "multicam_card_local_video_take",
+            "render_mode": "voice_over_video",
+            "video_input_count": 1,
+            "audio_input_count": 1,
+            "scene_audio_count": 1,
+            "duration_seconds": 4.0,
+            "video_transition": "fade",
+        },
+    }
+    assert "video_transition" in candidate_incompatibility_reason(candidate, config())
