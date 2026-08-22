@@ -154,3 +154,69 @@ def test_validate_storyboard_local_take_rejects_one_image_audio():
         assert "does not support audio inputs" in str(exc)
     else:
         raise AssertionError("expected audio validation failure")
+
+
+def segment_normalize_job():
+    return {
+        "family": "media_processing",
+        "media_type": "video",
+        "processing_task": "storyboard_ffmpeg_processing",
+        "processor_id": "storyboard_ffmpeg",
+        "mediaassembly_operation": "segmented_media_segment_normalize",
+        "operation_type": "segmented_media_segment_normalize",
+        "operation": "segmented_media_segment_normalize",
+        "storyboard_type": "video_capture_segmented_media",
+        "inputs": [
+            {
+                "kind": "source_video",
+                "input_id": 2353,
+                "role": "raw_segment",
+                "filename": "software-demo-screen-seg-0005.webm",
+                "mime_type": "video/webm",
+            }
+        ],
+        "processing": {
+            "operation_type": "segmented_media_segment_normalize",
+            "target_width": 1280,
+            "target_height": 720,
+            "resize_mode": "scale_to_cover_crop",
+            "fps": 30,
+            "crf": 20,
+            "preset": "veryfast",
+            "audio_bitrate": "128k",
+        },
+        "output": {"count": 1, "format": "mp4", "max_duration_seconds": 60},
+    }
+
+
+def test_validate_segment_normalize_accepts_one_source_video_with_target_dimensions():
+    processing = validate_storyboard_ffmpeg_job(segment_normalize_job())
+    assert processing["operation_type"] == "segmented_media_segment_normalize"
+    assert processing["output_width"] == 1280
+    assert processing["output_height"] == 720
+    assert processing["resize_mode"] == "scale_to_cover_crop"
+
+
+def test_validate_segment_normalize_rejects_missing_target_dimensions():
+    job = segment_normalize_job()
+    del job["processing"]["target_width"]
+    del job["processing"]["target_height"]
+
+    try:
+        validate_storyboard_ffmpeg_job(job)
+    except ValueError as exc:
+        assert "target_width and target_height" in str(exc)
+    else:
+        raise AssertionError("expected target dimension validation failure")
+
+
+def test_validate_segment_normalize_rejects_multiple_video_inputs():
+    job = segment_normalize_job()
+    job["inputs"].append({"input_id": 2354, "kind": "source_video", "role": "raw_segment", "mime_type": "video/webm"})
+
+    try:
+        validate_storyboard_ffmpeg_job(job)
+    except ValueError as exc:
+        assert "exactly one source_video" in str(exc)
+    else:
+        raise AssertionError("expected multiple source_video validation failure")

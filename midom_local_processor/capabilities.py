@@ -121,6 +121,14 @@ def build_capabilities() -> dict[str, Any]:
                     "head_tail_silence",
                     "h264_aac_mp4_faststart",
                 ],
+                "segmented_media_segment_normalize": [
+                    "single_segment_normalize",
+                    "scale_to_cover_crop",
+                    "exact_target_dimensions",
+                    "fps_normalize",
+                    "h264_aac_mp4_faststart",
+                    "silent_audio_fill",
+                ],
                 "multicam_card_local_video_take": [
                     "one_image",
                     "two_image_fade",

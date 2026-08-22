@@ -174,6 +174,8 @@ Storyboard FFmpeg Processing capability:
 - `processor_id = "storyboard_ffmpeg_processor"`
 - `output_mime_types = ["video/mp4"]`
 
+For compatibility with newer Midom segmented-media jobs, claimed Storyboard FFmpeg jobs may also use `processor_id = "storyboard_ffmpeg"`.
+
 Supported deterministic operations include:
 
 - `event_video_processing`
@@ -184,6 +186,7 @@ Supported deterministic operations include:
 - `multicam_card_local_video_take`
 - `mediastoryboard_card_trim_take`
 - `mediastoryboard_card_local_video_take`
+- `segmented_media_segment_normalize`
 - `replace_video_soundtrack`
 - `multicam_final_assembly`
 - `multicam_optimize_video`
@@ -194,6 +197,8 @@ Local card video take first-pass render modes:
 - `one_image`: exactly one `start_image`, no video inputs, no audio inputs, silent AAC audio is added.
 - `two_image_fade`: exactly one `start_image` and one `end_image`, no video inputs, no audio inputs, silent AAC audio is added.
 - `voice_over_video`: exactly one visual `source_video` and exactly one `scene_audio`; `duration_seconds` is explicit, `video_transition` must be empty or `none`, and the scene audio is encoded as AAC.
+
+Segmented media segment normalization accepts exactly one `source_video` raw segment, including `video/webm`, and requires `target_width` and `target_height` in the claimed processing payload. `resize_mode = "scale_to_cover_crop"` scales to cover, center-crops to the exact target canvas, normalizes FPS, preserves source audio when present, and adds silent AAC when the source has no audio.
 
 The FFmpeg renderer is kept inside the standalone processor source boundary and does not import WanGP. Midom remains authoritative for validation after upload; local outputs are treated as untrusted MP4 artifacts.
 

@@ -156,3 +156,45 @@ def test_candidate_rejects_storyboard_local_voice_over_video_transition():
         },
     }
     assert "video_transition" in candidate_incompatibility_reason(candidate, config())
+
+
+def test_candidate_compatible_segment_normalize_without_target_dimensions():
+    candidate = {
+        "job_id": 104,
+        "worker_id": 10,
+        "org_id": 1,
+        "project_id": 2,
+        "requested_by_user_id": 3,
+        "media_type": "video",
+        "family": "media_processing",
+        "processing_task": "storyboard_ffmpeg_processing",
+        "processor_id": "storyboard_ffmpeg",
+        "summary": {
+            "operation_type": "segmented_media_segment_normalize",
+            "video_input_count": 1,
+            "source_video_count": 1,
+            "output_count": 1,
+            "output_format": "mp4",
+        },
+    }
+    assert candidate_incompatibility_reason(candidate, config()) is None
+
+
+def test_candidate_rejects_segment_normalize_multiple_videos():
+    candidate = {
+        "job_id": 105,
+        "worker_id": 10,
+        "org_id": 1,
+        "project_id": 2,
+        "requested_by_user_id": 3,
+        "media_type": "video",
+        "family": "media_processing",
+        "processing_task": "storyboard_ffmpeg_processing",
+        "processor_id": "storyboard_ffmpeg",
+        "summary": {
+            "operation_type": "segmented_media_segment_normalize",
+            "video_input_count": 2,
+            "source_video_count": 2,
+        },
+    }
+    assert "exactly one source_video" in candidate_incompatibility_reason(candidate, config())

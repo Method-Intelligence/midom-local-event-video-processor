@@ -295,6 +295,20 @@ class EventVideoProcessor:
                 progress_end=95,
                 status=f"Optimizing storyboard video operation {operation_type}.",
             )
+        elif operation_type == "segmented_media_segment_normalize":
+            primary = storyboard_primary_video_input(video_inputs)
+            self._run_storyboard_segment_normalize_ffmpeg(
+                job_id,
+                primary,
+                final_output,
+                output_width,
+                output_height,
+                process_handle,
+                processing=processing,
+                progress_start=5,
+                progress_end=95,
+                status="Normalizing segmented media segment for storyboard use.",
+            )
         elif operation_type == "replace_video_soundtrack":
             primary = storyboard_primary_video_input(video_inputs)
             soundtrack_input = storyboard_audio_input(downloaded_inputs)
@@ -912,6 +926,84 @@ class EventVideoProcessor:
             timeout_seconds=storyboard_step_timeout(source_duration),
         )
 
+    def _run_storyboard_segment_normalize_ffmpeg(
+        self,
+        job_id: int,
+        video_input: DownloadedInput,
+        output_path: Path,
+        output_width: int,
+        output_height: int,
+        process_handle: LocalProcessJob,
+        *,
+        processing: dict[str, Any],
+        progress_start: int,
+        progress_end: int,
+        status: str,
+    ) -> None:
+        metadata = video_input.metadata or probe_video_metadata(video_input.path)
+        source_duration = float(metadata.get("duration_seconds") or 1.0)
+        has_audio = bool(metadata.get("has_audio"))
+        fps = coerce_int(processing.get("fps"), STORYBOARD_OUTPUT_FPS, 1, 120)
+        resize_mode = str(processing.get("resize_mode") or "scale_to_cover_crop").strip().lower()
+        if resize_mode not in {"scale_to_cover_crop", "cover", "crop"}:
+            raise ValueError(f"Unsupported segmented media segment resize_mode: {resize_mode}")
+        command = [
+            ffmpeg_binary(),
+            "-y",
+            "-hide_banner",
+            "-v",
+            "error",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            "-i",
+            str(video_input.path),
+        ]
+        audio_label = "0:a:0"
+        if not has_audio:
+            command.extend(["-f", "lavfi", "-t", f"{source_duration:.3f}", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"])
+            audio_label = "1:a:0"
+        filter_parts = [
+            (
+                f"[0:v]scale={output_width}:{output_height}:force_original_aspect_ratio=increase,"
+                f"crop={output_width}:{output_height},"
+                f"fps={fps},setsar=1,format=yuv420p[vout]"
+            ),
+            f"[{audio_label}]aresample=48000,aformat=channel_layouts=stereo[aout]",
+        ]
+        command.extend([
+            "-filter_complex",
+            ";".join(filter_parts),
+            "-map",
+            "[vout]",
+            "-map",
+            "[aout]",
+            "-r",
+            str(fps),
+            "-t",
+            f"{source_duration:.3f}",
+            *storyboard_encode_args(processing),
+            str(output_path),
+        ])
+        log(
+            "Normalizing segmented media segment; "
+            f"job_id={job_id} input_id={video_input.input_id} "
+            f"track_key={processing.get('track_key')!r} segment_index={processing.get('segment_index')!r} "
+            f"output={output_width}x{output_height} resize_mode={resize_mode!r} fps={fps} "
+            f"duration_seconds={source_duration:.3f} has_audio={has_audio}."
+        )
+        self._run_ffmpeg_with_progress(
+            job_id,
+            command,
+            total_seconds=max(1.0, source_duration),
+            progress_start=progress_start,
+            progress_end=progress_end,
+            phase="processing",
+            status=status,
+            process_handle=process_handle,
+            timeout_seconds=storyboard_step_timeout(source_duration),
+        )
+
     def _run_storyboard_replace_soundtrack_ffmpeg(
         self,
         job_id: int,
@@ -1382,8 +1474,8 @@ def storyboard_effective_segment_duration(video_input: DownloadedInput, processi
 
 def storyboard_output_size(video_input: DownloadedInput, processing: dict[str, Any]) -> tuple[int, int]:
     metadata = video_input.metadata if isinstance(video_input.metadata, dict) else {}
-    width = coerce_int(processing.get("output_width") or processing.get("width"), 0, 0, 4096)
-    height = coerce_int(processing.get("output_height") or processing.get("height"), 0, 0, 4096)
+    width = coerce_int(processing.get("target_width") or processing.get("output_width") or processing.get("width"), 0, 0, 4096)
+    height = coerce_int(processing.get("target_height") or processing.get("output_height") or processing.get("height"), 0, 0, 4096)
     if width <= 0 or height <= 0:
         width = coerce_int(metadata.get("display_width") or metadata.get("width"), 1280, 2, 4096)
         height = coerce_int(metadata.get("display_height") or metadata.get("height"), 720, 2, 4096)

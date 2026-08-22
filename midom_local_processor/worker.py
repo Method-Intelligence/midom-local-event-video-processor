@@ -26,6 +26,7 @@ from .constants import (
     STORYBOARD_FFMPEG_OPERATION_TYPES,
     STORYBOARD_FFMPEG_PROCESSING_TASK,
     STORYBOARD_FFMPEG_PROCESSOR_ID,
+    STORYBOARD_FFMPEG_PROCESSOR_IDS,
     STORYBOARD_IMAGE_INPUT_KINDS,
     STORYBOARD_LOCAL_VIDEO_TAKE_OPERATION_TYPES,
     STORYBOARD_SINGLE_VIDEO_OPERATION_TYPES,
@@ -502,6 +503,15 @@ class LocalProcessorWorker:
                 raise ValueError(f"Storyboard replace_video_soundtrack requires exactly one downloaded source video input; got {video_count}.")
             if audio_count != 1:
                 raise ValueError(f"Storyboard replace_video_soundtrack requires exactly one downloaded soundtrack audio input; got {audio_count}.")
+        elif operation_type == "segmented_media_segment_normalize":
+            source_video_count = sum(1 for item in downloaded if item.kind == "source_video")
+            image_count = sum(1 for item in downloaded if item.category == "image")
+            audio_count = sum(1 for item in downloaded if item.category == "audio")
+            if video_count != 1 or source_video_count != 1 or image_count or audio_count:
+                raise ValueError(
+                    "Storyboard segmented_media_segment_normalize requires exactly one downloaded source_video input; "
+                    f"got source_video={source_video_count}, video_inputs={video_count}, image_inputs={image_count}, audio_inputs={audio_count}."
+                )
         elif operation_type in STORYBOARD_LOCAL_VIDEO_TAKE_OPERATION_TYPES:
             render_mode = str(processing.get("render_mode") or "").strip().lower()
             image_count = sum(1 for item in downloaded if item.category == "image")
@@ -645,10 +655,10 @@ def candidate_incompatibility_reason(candidate: Any, config: WorkerConfig) -> st
     if family and family != "media_processing":
         return f"unsupported family: {family}"
     operation_type = storyboard_operation_type(candidate)
-    if operation_type in STORYBOARD_FFMPEG_OPERATION_TYPES or processing_task == STORYBOARD_FFMPEG_PROCESSING_TASK or processor_id == STORYBOARD_FFMPEG_PROCESSOR_ID:
+    if operation_type in STORYBOARD_FFMPEG_OPERATION_TYPES or processing_task == STORYBOARD_FFMPEG_PROCESSING_TASK or processor_id in STORYBOARD_FFMPEG_PROCESSOR_IDS:
         if operation_type not in STORYBOARD_FFMPEG_OPERATION_TYPES:
             return f"unsupported storyboard operation_type: {operation_type}"
-        if processor_id and processor_id != STORYBOARD_FFMPEG_PROCESSOR_ID:
+        if processor_id and processor_id not in STORYBOARD_FFMPEG_PROCESSOR_IDS:
             return f"unsupported storyboard processor_id: {processor_id}"
         try:
             output_count = int(summary.get("output_count") or 1)
@@ -669,6 +679,16 @@ def candidate_incompatibility_reason(candidate: Any, config: WorkerConfig) -> st
             audio_count = coerce_input_order(summary.get("audio_input_count", summary.get("soundtrack_audio_count")), 1)
             if audio_count != 1:
                 return f"replace_video_soundtrack requires exactly one soundtrack audio input; got {audio_count}"
+        elif operation_type == "segmented_media_segment_normalize":
+            source_video_count = coerce_input_order(summary.get("source_video_count"), video_count)
+            if video_count != 1 or source_video_count != 1:
+                return (
+                    "segmented_media_segment_normalize requires exactly one source_video input; "
+                    f"got source_video={source_video_count}, video_inputs={video_count}"
+                )
+            resize_mode = str(candidate.get("resize_mode") or processing.get("resize_mode") or summary.get("resize_mode") or "scale_to_cover_crop").strip().lower()
+            if resize_mode not in {"scale_to_cover_crop", "cover", "crop"}:
+                return f"segmented_media_segment_normalize unsupported resize_mode: {resize_mode}"
         elif operation_type in STORYBOARD_LOCAL_VIDEO_TAKE_OPERATION_TYPES:
             render_mode = str(
                 candidate.get("render_mode") or processing.get("render_mode") or summary.get("render_mode") or ""

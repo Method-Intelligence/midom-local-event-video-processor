@@ -1,5 +1,10 @@
+import subprocess
+
+import pytest
+
 from midom_local_processor import ffmpeg_processor
 from midom_local_processor.ffmpeg_processor import EventVideoProcessor, LocalProcessJob, event_video_output_size, ffmpeg_progress_from_line
+from midom_local_processor.ffmpeg_probe import ffmpeg_binary, probe_video_metadata
 from midom_local_processor.types import DownloadedInput
 
 
@@ -322,3 +327,94 @@ def test_storyboard_local_voice_over_video_rejects_short_scene_audio(monkeypatch
         assert "scene_audio is shorter" in str(exc)
     else:
         raise AssertionError("expected short scene_audio validation failure")
+
+
+def test_storyboard_segment_normalize_command_uses_cover_crop_and_silent_audio(monkeypatch, tmp_path):
+    captured = capture_ffmpeg_command(monkeypatch)
+    processor = EventVideoProcessor()
+
+    processor._run_storyboard_segment_normalize_ffmpeg(
+        132,
+        downloaded_video(tmp_path, input_id=8, has_audio=False, duration=2.0, width=640, height=480),
+        tmp_path / "segment.mp4",
+        1280,
+        720,
+        LocalProcessJob(),
+        processing={"resize_mode": "scale_to_cover_crop", "fps": 30, "crf": 20, "preset": "veryfast", "audio_bitrate": "128k"},
+        progress_start=10,
+        progress_end=90,
+        status="Normalize.",
+    )
+
+    command = captured["command"]
+    filter_complex = command[command.index("-filter_complex") + 1]
+    assert "anullsrc=channel_layout=stereo:sample_rate=48000" in command
+    assert "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,fps=30,setsar=1,format=yuv420p[vout]" in filter_complex
+    assert "[1:a:0]aresample=48000,aformat=channel_layouts=stereo[aout]" in filter_complex
+    assert command[command.index("-crf") + 1] == "20"
+    assert command[command.index("-preset") + 1] == "veryfast"
+    assert command[command.index("-b:a") + 1] == "128k"
+    assert command[command.index("-t") + 1] == "2.000"
+
+
+def create_no_audio_source(path, *, width=640, height=480, duration=0.5):
+    command = [
+        ffmpeg_binary(),
+        "-y",
+        "-hide_banner",
+        "-v",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        f"testsrc2=size={width}x{height}:rate=15",
+        "-t",
+        str(duration),
+        "-an",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        str(path),
+    ]
+    completed = subprocess.run(command, check=False, capture_output=True, text=True, timeout=30)
+    if completed.returncode != 0:
+        pytest.skip(f"ffmpeg could not generate smoke input: {completed.stderr or completed.stdout}")
+
+
+def test_storyboard_segment_normalize_smoke_adds_audio_for_no_audio_mp4(tmp_path):
+    source_path = tmp_path / "source-no-audio.mp4"
+    output_path = tmp_path / "normalized.mp4"
+    create_no_audio_source(source_path)
+    metadata = probe_video_metadata(source_path)
+    assert metadata["has_audio"] is False
+
+    processor = EventVideoProcessor()
+    processor._run_storyboard_segment_normalize_ffmpeg(
+        133,
+        DownloadedInput(
+            input_id=9,
+            kind="source_video",
+            path=source_path,
+            mime_type="video/mp4",
+            sha256="0" * 64,
+            metadata=metadata,
+            category="video",
+            role="raw_segment",
+        ),
+        output_path,
+        1280,
+        720,
+        LocalProcessJob(),
+        processing={"resize_mode": "scale_to_cover_crop", "fps": 30, "crf": 20, "preset": "veryfast", "audio_bitrate": "128k"},
+        progress_start=10,
+        progress_end=90,
+        status="Normalize.",
+    )
+
+    output_metadata = probe_video_metadata(output_path)
+    assert output_metadata["display_width"] == 1280
+    assert output_metadata["display_height"] == 720
+    assert output_metadata["video_codec"] == "h264"
+    assert output_metadata["audio_codec"] == "aac"
+    assert output_metadata["has_audio"] is True

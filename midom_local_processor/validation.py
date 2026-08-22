@@ -20,6 +20,7 @@ from .constants import (
     STORYBOARD_FFMPEG_OPERATION_TYPES,
     STORYBOARD_FFMPEG_PROCESSING_TASK,
     STORYBOARD_FFMPEG_PROCESSOR_ID,
+    STORYBOARD_FFMPEG_PROCESSOR_IDS,
     STORYBOARD_AUDIO_INPUT_KINDS,
     STORYBOARD_IMAGE_INPUT_KINDS,
     STORYBOARD_LOCAL_VIDEO_TAKE_OPERATION_TYPES,
@@ -239,7 +240,7 @@ def is_storyboard_ffmpeg_processing_job(job: dict[str, Any]) -> bool:
     return (
         operation_type in STORYBOARD_FFMPEG_OPERATION_TYPES
         or processing_task == STORYBOARD_FFMPEG_PROCESSING_TASK
-        or processor_id == STORYBOARD_FFMPEG_PROCESSOR_ID
+        or processor_id in STORYBOARD_FFMPEG_PROCESSOR_IDS
         or (family == "media_processing" and operation_type in STORYBOARD_FFMPEG_OPERATION_TYPES)
     )
 
@@ -269,7 +270,7 @@ def validate_storyboard_ffmpeg_job(job: dict[str, Any]) -> dict[str, Any]:
     if processing_task not in {"", STORYBOARD_FFMPEG_PROCESSING_TASK, "mediaassemblyjob", "mediaassembly_ffmpeg", "storyboard_ffmpeg"}:
         raise ValueError(f"Unsupported storyboard processing_task: {processing_task}")
     processor_id = str(job.get("processor_id") or job.get("model_id") or STORYBOARD_FFMPEG_PROCESSOR_ID).strip()
-    if processor_id not in {"", STORYBOARD_FFMPEG_PROCESSOR_ID}:
+    if processor_id not in {"", *STORYBOARD_FFMPEG_PROCESSOR_IDS}:
         raise ValueError(f"Unsupported storyboard processor_id: {processor_id}")
     output = job.get("output") or {}
     if not isinstance(output, dict):
@@ -284,8 +285,8 @@ def validate_storyboard_ffmpeg_job(job: dict[str, Any]) -> dict[str, Any]:
     if output_format != "mp4":
         raise ValueError(f"Unsupported storyboard output format: {output_format}")
     processing = merged_processing_payload(job)
-    width = coerce_int(output.get("width") or processing.get("width") or processing.get("output_width"), 0, 0, 4096)
-    height = coerce_int(output.get("height") or processing.get("height") or processing.get("output_height"), 0, 0, 4096)
+    width = coerce_int(output.get("width") or processing.get("target_width") or processing.get("output_width") or processing.get("width"), 0, 0, 4096)
+    height = coerce_int(output.get("height") or processing.get("target_height") or processing.get("output_height") or processing.get("height"), 0, 0, 4096)
     if (width == 0) != (height == 0):
         raise ValueError("Storyboard output width and height must be supplied together.")
     trim_start = coerce_float(
@@ -312,6 +313,7 @@ def validate_storyboard_ffmpeg_job(job: dict[str, Any]) -> dict[str, Any]:
     start_image_count = 0
     end_image_count = 0
     scene_audio_count = 0
+    source_video_count = 0
     for item in inputs:
         if not isinstance(item, dict):
             raise ValueError("Storyboard FFmpeg input descriptor must be a JSON object.")
@@ -320,6 +322,8 @@ def validate_storyboard_ffmpeg_job(job: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(f"Unsupported storyboard FFmpeg input kind: {kind}")
         if kind in STORYBOARD_VIDEO_INPUT_KINDS:
             video_count += 1
+            if kind == "source_video":
+                source_video_count += 1
         elif kind in STORYBOARD_IMAGE_INPUT_KINDS:
             image_count += 1
             if kind == "start_image":
@@ -340,6 +344,17 @@ def validate_storyboard_ffmpeg_job(job: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(f"Storyboard replace_video_soundtrack requires exactly one source video input; got {video_count}.")
         if audio_count != 1:
             raise ValueError(f"Storyboard replace_video_soundtrack requires exactly one soundtrack audio input; got {audio_count}.")
+    elif operation_type == "segmented_media_segment_normalize":
+        if video_count != 1 or source_video_count != 1 or image_count or audio_count:
+            raise ValueError(
+                "Storyboard segmented_media_segment_normalize requires exactly one source_video input; "
+                f"got source_video={source_video_count}, video_inputs={video_count}, image_inputs={image_count}, audio_inputs={audio_count}."
+            )
+        if width <= 0 or height <= 0:
+            raise ValueError("Storyboard segmented_media_segment_normalize requires target_width and target_height.")
+        resize_mode = str(processing.get("resize_mode") or "scale_to_cover_crop").strip().lower()
+        if resize_mode not in {"scale_to_cover_crop", "cover", "crop"}:
+            raise ValueError(f"Unsupported segmented media segment resize_mode: {resize_mode}")
     elif operation_type in STORYBOARD_LOCAL_VIDEO_TAKE_OPERATION_TYPES:
         if render_mode not in {"one_image", "two_image_fade", "voice_over_video"}:
             raise ValueError(f"Unsupported storyboard local video take render_mode: {render_mode or 'missing'}")

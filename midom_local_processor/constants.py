@@ -32,6 +32,7 @@ EVENT_VIDEO_TIMEOUT_MULTIPLIER = 12
 EVENT_VIDEO_TIMEOUT_MAX_SECONDS = 7200
 
 STORYBOARD_FFMPEG_PROCESSOR_ID = "storyboard_ffmpeg_processor"
+STORYBOARD_FFMPEG_PROCESSOR_IDS = {STORYBOARD_FFMPEG_PROCESSOR_ID, "storyboard_ffmpeg"}
 STORYBOARD_FFMPEG_PROCESSING_TASK = "storyboard_ffmpeg_processing"
 MAX_STORYBOARD_VIDEO_INPUT_BYTES = 1_073_741_824
 MAX_STORYBOARD_VIDEO_OUTPUT_BYTES = 536_870_912
@@ -59,6 +60,7 @@ STORYBOARD_FFMPEG_OPERATION_TYPES = {
     "multicam_optimize_video",
     "optimize_video",
     "replace_video_soundtrack",
+    "segmented_media_segment_normalize",
     "multicam_seekable_mp4",
     "multicam_ai_video_take_prepare",
     "multicam_card_local_video_take",
@@ -83,6 +85,7 @@ STORYBOARD_SINGLE_VIDEO_OPERATION_TYPES = {
     "multicam_optimize_video",
     "optimize_video",
     "replace_video_soundtrack",
+    "segmented_media_segment_normalize",
     "multicam_seekable_mp4",
     "multicam_ai_video_take_prepare",
     "mediastoryboard_card_pass_through_take",
