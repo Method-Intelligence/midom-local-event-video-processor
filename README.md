@@ -147,7 +147,9 @@ The sections below describe the worker contract, local development, release pack
 
 ## Capability Contract
 
-The processor reports:
+The processor reports `local_media_processor` capabilities for deterministic Midom video media-processing jobs.
+
+Event Video Processing capability:
 
 - `worker_kind = "local_media_processor"`
 - `worker_display_name = "Local Event Video Processor"`
@@ -162,7 +164,43 @@ The first-pass output profile produces exact canvases:
 - Landscape: `1280x720`
 - Portrait: `720x1280`
 
-The source video is scaled to fit inside the exact canvas and padded. Transparent PNG overlays and bumper images are selected by output orientation.
+The main uploaded field video is scaled to cover the exact canvas and center-cropped when needed. Transparent PNG overlays and bumper images are selected by output orientation.
+
+Storyboard FFmpeg Processing capability:
+
+- `family = "media_processing"`
+- `media_type = "video"`
+- `processing_task = "storyboard_ffmpeg_processing"`
+- `processor_id = "storyboard_ffmpeg_processor"`
+- `output_mime_types = ["video/mp4"]`
+
+For compatibility with newer Midom segmented-media jobs, claimed Storyboard FFmpeg jobs may also use `processor_id = "storyboard_ffmpeg"`.
+
+Supported deterministic operations include:
+
+- `event_video_processing`
+- `storyboard_ffmpeg_processing`
+- `multicam_card_pass_through_take`
+- `multicam_card_overlay_take`
+- `multicam_card_trim_take`
+- `multicam_card_local_video_take`
+- `mediastoryboard_card_trim_take`
+- `mediastoryboard_card_local_video_take`
+- `segmented_media_segment_normalize`
+- `replace_video_soundtrack`
+- `multicam_final_assembly`
+- `multicam_optimize_video`
+- `optimize_video`
+
+Local card video take first-pass render modes:
+
+- `one_image`: exactly one `start_image`, no video inputs, no audio inputs, silent AAC audio is added.
+- `two_image_fade`: exactly one `start_image` and one `end_image`, no video inputs, no audio inputs, silent AAC audio is added.
+- `voice_over_video`: exactly one visual `source_video` and exactly one `scene_audio`; `duration_seconds` is explicit, `video_transition` must be empty or `none`, and the scene audio is encoded as AAC.
+
+Segmented media segment normalization accepts exactly one `source_video` raw segment, including `video/webm`, and requires `target_width` and `target_height` in the claimed processing payload. `resize_mode = "scale_to_cover_crop"` scales to cover, center-crops to the exact target canvas, normalizes FPS, preserves source audio when present, and adds silent AAC when the source has no audio.
+
+The FFmpeg renderer is kept inside the standalone processor source boundary and does not import WanGP. Midom remains authoritative for validation after upload; local outputs are treated as untrusted MP4 artifacts.
 
 ## Install For Development
 
@@ -254,7 +292,7 @@ The worker:
 
 1. Sends heartbeats.
 2. Polls candidates.
-3. Claims one compatible Event Video Processing job at a time.
+3. Claims one compatible local media processing job at a time.
 4. Downloads only job-scoped inputs.
 5. Runs FFmpeg.
 6. Uploads exactly one MP4 artifact.

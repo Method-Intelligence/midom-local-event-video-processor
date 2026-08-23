@@ -191,6 +191,54 @@ def probe_video_metadata(path: Path, *, ffprobe: str | None = None) -> dict[str,
     }
 
 
+def probe_audio_metadata(path: Path, *, ffprobe: str | None = None) -> dict[str, Any]:
+    ffprobe = ffprobe or ffprobe_binary()
+    command = [
+        ffprobe,
+        "-v",
+        "error",
+        "-show_streams",
+        "-show_format",
+        "-of",
+        "json",
+        str(path),
+    ]
+    completed = subprocess.run(command, check=False, capture_output=True, text=True, timeout=30)
+    if completed.returncode != 0:
+        stderr = str(completed.stderr or completed.stdout or "").strip()
+        raise ValueError(f"Could not inspect audio metadata: {stderr}")
+    try:
+        payload = json.loads(completed.stdout or "{}")
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Could not parse audio metadata: {exc}")
+    streams = payload.get("streams") or []
+    if not isinstance(streams, list):
+        streams = []
+    audio_stream = next((stream for stream in streams if isinstance(stream, dict) and stream.get("codec_type") == "audio"), None)
+    if not isinstance(audio_stream, dict):
+        raise ValueError("Audio input must contain an audio stream.")
+    format_block = payload.get("format") if isinstance(payload.get("format"), dict) else {}
+
+    def duration_seconds(block: Any) -> float:
+        if not isinstance(block, dict):
+            return 0.0
+        try:
+            value = float(block.get("duration") or 0)
+        except (TypeError, ValueError):
+            value = 0.0
+        return value if value > 0 else 0.0
+
+    duration = duration_seconds(audio_stream) or duration_seconds(format_block)
+    if duration <= 0:
+        raise ValueError("Audio duration could not be read.")
+    return {
+        "duration_seconds": duration,
+        "audio_codec": str(audio_stream.get("codec_name") or "").strip().lower(),
+        "sample_rate": int(audio_stream.get("sample_rate") or 0),
+        "channels": int(audio_stream.get("channels") or 0),
+    }
+
+
 def video_rotation_degrees(video_stream: dict[str, Any]) -> int:
     rotation_values = []
     tags = video_stream.get("tags") if isinstance(video_stream.get("tags"), dict) else {}

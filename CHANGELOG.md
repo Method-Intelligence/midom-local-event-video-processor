@@ -6,7 +6,12 @@ This project uses release tags such as `v0.1.0`.
 
 ## [Unreleased]
 
-No unreleased changes yet.
+- Added deterministic Storyboard FFmpeg Processing support alongside Event Video Processing.
+- Added local FFmpeg render paths for storyboard overlay, trim/pass-through, soundtrack replacement, final assembly, and optimize/re-encode operations.
+- Added local card video take rendering for `multicam_card_local_video_take` and `mediastoryboard_card_local_video_take` modes `one_image`, `two_image_fade`, and `voice_over_video`.
+- Added `scene_audio` storyboard input support for local voice-over video rendering.
+- Added `segmented_media_segment_normalize` support for browser-capture child segment normalization, including `storyboard_ffmpeg` processor-id compatibility and no-audio silent AAC fill.
+- Added storyboard media-processing capability advertisement, job validation, candidate filtering, job-scoped input downloading, and command-construction tests.
 
 ## [0.1.1] - 2026-07-17
 

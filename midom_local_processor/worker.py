@@ -15,13 +15,33 @@ from .constants import (
     ALLOWED_EVENT_INPUT_KINDS,
     ALLOWED_EVENT_OVERLAY_MIME_TYPES,
     ALLOWED_EVENT_SOURCE_VIDEO_MIME_TYPES,
+    ALLOWED_AUDIO_INPUT_MIME_TYPES,
+    ALLOWED_AUDIO_SUFFIXES,
+    ALLOWED_IMAGE_MIME_TYPES,
+    ALLOWED_STORYBOARD_AUDIO_CONTAINER_MIME_TYPES,
+    ALLOWED_STORYBOARD_INPUT_KINDS,
+    ALLOWED_STORYBOARD_MATTE_MIME_TYPES,
+    ALLOWED_STORYBOARD_SOURCE_VIDEO_MIME_TYPES,
+    STORYBOARD_AUDIO_INPUT_KINDS,
+    STORYBOARD_FFMPEG_OPERATION_TYPES,
+    STORYBOARD_FFMPEG_PROCESSING_TASK,
+    STORYBOARD_FFMPEG_PROCESSOR_ID,
+    STORYBOARD_FFMPEG_PROCESSOR_IDS,
+    STORYBOARD_IMAGE_INPUT_KINDS,
+    STORYBOARD_LOCAL_VIDEO_TAKE_OPERATION_TYPES,
+    STORYBOARD_SINGLE_VIDEO_OPERATION_TYPES,
+    STORYBOARD_VIDEO_INPUT_KINDS,
+    MAX_STORYBOARD_AUDIO_INPUT_BYTES,
+    MAX_STORYBOARD_IMAGE_INPUT_BYTES,
+    MAX_STORYBOARD_VIDEO_INPUT_BYTES,
+    MAX_STORYBOARD_VIDEO_DURATION_SECONDS,
     HEARTBEAT_INTERVAL_SECONDS,
     MAX_EVENT_VIDEO_INPUT_BYTES,
     MAX_IMAGE_BYTES,
     MIME_EXTENSION,
     POLL_INTERVAL_SECONDS,
 )
-from .ffmpeg_probe import probe_ffmpeg
+from .ffmpeg_probe import probe_audio_metadata, probe_ffmpeg
 from .ffmpeg_processor import EventVideoProcessor, LocalProcessJob
 from .log import log
 from .midom_api import MidomApi, MidomMethodNotAllowedError
@@ -35,9 +55,15 @@ from .validation import (
     sha256_bytes,
     validate_asset_dimensions,
     event_job_max_output_duration_seconds,
+    is_storyboard_ffmpeg_processing_job,
+    is_event_video_processing_job,
+    merged_processing_payload,
     validate_event_job,
     validate_job_scope,
     validate_source_video,
+    validate_storyboard_ffmpeg_job,
+    validate_storyboard_video,
+    storyboard_operation_type,
 )
 
 
@@ -71,7 +97,7 @@ class LocalProcessorWorker:
         signal.signal(signal.SIGTERM, self.request_stop)
         self.update_capabilities(allow_method_not_allowed=True)
         log(f"Worker loop started; worker_id={self.config.worker_id} project_id={self.config.project_id}.")
-        log("Waiting for Event Video Processing jobs.")
+        log("Waiting for local media processing jobs.")
         self._start_interactive_controls()
         while not self.stop_event.is_set():
             now = time.monotonic()
@@ -169,12 +195,12 @@ class LocalProcessorWorker:
             status = "busy"
             accepting = True
             active_job_id = self.active_job_id
-            message = f"Processing Event video job {self.active_job_id}. Accepting additional queued jobs."
+            message = f"Processing local media job {self.active_job_id}. Accepting additional queued jobs."
         else:
             status = "idle"
             accepting = True
             active_job_id = None
-            message = "Idle and accepting Event Video Processing jobs."
+            message = "Idle and accepting local media processing jobs."
         payload = self.api.heartbeat(status=status, accepting=accepting, active_job_id=active_job_id, message=message)
         if isinstance(payload, dict) and payload.get("revoke_requested"):
             log("Midom requested worker revocation; stopping.")
@@ -205,12 +231,23 @@ class LocalProcessorWorker:
         job_id = coerce_job_id(job)
         self.active_job_id = job_id
         self.active_process = None
-        log(f"Starting claimed Event Video Processing job; job_id={job_id}.")
+        log(f"Starting claimed local media processing job; job_id={job_id}.")
         try:
             validate_job_scope(job, org_id=self.config.org_id, project_id=self.config.project_id, paired_user_id=self.config.paired_user_id)
-            processing = validate_event_job(job)
-            max_output_duration_seconds = event_job_max_output_duration_seconds(job)
-            self.api.job_update(job_id, "progress", {"phase": "starting", "status": "Preparing local Event Video Processing.", "progress": 0})
+            is_storyboard_job = is_storyboard_ffmpeg_processing_job(job)
+            if is_storyboard_job:
+                processing = validate_storyboard_ffmpeg_job(job)
+                max_output_duration_seconds = None
+                start_status = "Preparing local Storyboard FFmpeg Processing."
+                complete_model_id = STORYBOARD_FFMPEG_PROCESSOR_ID
+                complete_processor_id = STORYBOARD_FFMPEG_PROCESSOR_ID
+            else:
+                processing = validate_event_job(job)
+                max_output_duration_seconds = event_job_max_output_duration_seconds(job)
+                start_status = "Preparing local Event Video Processing."
+                complete_model_id = "event_video_ffmpeg_processor"
+                complete_processor_id = "event_video_ffmpeg_processor"
+            self.api.job_update(job_id, "progress", {"phase": "starting", "status": start_status, "progress": 0})
             with tempfile.TemporaryDirectory(prefix=f"midom-local-job-{job_id}-") as temp:
                 temp_dir = Path(temp)
                 downloaded_inputs = self.download_inputs(job, temp_dir)
@@ -225,40 +262,50 @@ class LocalProcessorWorker:
                         process_handle.cancel()
 
                 processor = EventVideoProcessor(progress=progress, cancel_event=self.stop_event)
-                result = processor.process(
-                    job_id=job_id,
-                    downloaded_inputs=downloaded_inputs,
-                    processing=processing,
-                    temp_dir=temp_dir,
-                    process_handle=process_handle,
-                    worker_id=self.config.worker_id,
-                    max_output_duration_seconds=max_output_duration_seconds,
-                )
+                if is_storyboard_job:
+                    result = processor.process_storyboard(
+                        job_id=job_id,
+                        downloaded_inputs=downloaded_inputs,
+                        processing=processing,
+                        temp_dir=temp_dir,
+                        process_handle=process_handle,
+                        worker_id=self.config.worker_id,
+                    )
+                else:
+                    result = processor.process(
+                        job_id=job_id,
+                        downloaded_inputs=downloaded_inputs,
+                        processing=processing,
+                        temp_dir=temp_dir,
+                        process_handle=process_handle,
+                        worker_id=self.config.worker_id,
+                        max_output_duration_seconds=max_output_duration_seconds,
+                    )
                 process_handle.mark_done()
                 self.active_process = None
                 if self.stop_event.is_set() or process_handle.cancelled:
-                    self.api.job_update(job_id, "fail", {"reason": "cancel_requested", "message": "Event Video Processing was cancelled."})
+                    self.api.job_update(job_id, "fail", {"reason": "cancel_requested", "message": "Local media processing was cancelled."})
                     return
                 artifact = self.api.upload_video_artifact(job_id, result.path, artifact_index=0)
                 complete_payload = {
                     "artifacts": [artifact],
                     "backend": "ffmpeg",
-                    "model_id": "event_video_ffmpeg_processor",
-                    "processor_id": "event_video_ffmpeg_processor",
+                    "model_id": complete_model_id,
+                    "processor_id": complete_processor_id,
                     "processing_metadata": result.metadata,
                 }
                 log(
-                    "Completing Event Video Processing job; "
+                    "Completing FFmpeg media processing job; "
                     f"job_id={job_id} artifact={artifact} "
                     f"output={result.metadata.get('output_width')}x{result.metadata.get('output_height')} "
                     f"duration_seconds={result.metadata.get('output_duration_seconds')}."
                 )
                 self.api.job_update(job_id, "complete", complete_payload)
-                log(f"Event Video Processing complete accepted by Midom; job_id={job_id}.")
+                log(f"FFmpeg media processing complete accepted by Midom; job_id={job_id}.")
         except RuntimeError as exc:
             if str(exc) == "cancel_requested":
                 try:
-                    self.api.job_update(job_id, "fail", {"reason": "cancel_requested", "message": "Event Video Processing was cancelled."})
+                    self.api.job_update(job_id, "fail", {"reason": "cancel_requested", "message": "Local media processing was cancelled."})
                 except Exception as fail_exc:
                     log(f"Failed to report cancellation; job_id={job_id} error={fail_exc}")
             else:
@@ -277,6 +324,8 @@ class LocalProcessorWorker:
             log(f"Failed to report job failure; job_id={job_id} error={fail_exc}")
 
     def download_inputs(self, job: dict[str, Any], temp_dir: Path) -> list[DownloadedInput]:
+        if is_storyboard_ffmpeg_processing_job(job):
+            return self.download_storyboard_inputs(job, temp_dir)
         job_id = coerce_job_id(job)
         processing = job.get("processing") if isinstance(job.get("processing"), dict) else {}
         apply_overlay = coerce_bool(processing.get("apply_overlay"), False)
@@ -352,12 +401,226 @@ class LocalProcessorWorker:
             raise ValueError("bumper_image inputs were downloaded but add_ending_bumper is false.")
         return downloaded
 
+    def download_storyboard_inputs(self, job: dict[str, Any], temp_dir: Path) -> list[DownloadedInput]:
+        job_id = coerce_job_id(job)
+        operation_type = storyboard_operation_type(job)
+        processing = merged_processing_payload(job)
+        inputs = job.get("inputs") or []
+        if not isinstance(inputs, list):
+            raise ValueError("Storyboard FFmpeg inputs must be a list.")
+        source_video_mime_types = set(ALLOWED_STORYBOARD_SOURCE_VIDEO_MIME_TYPES)
+        if not probe_ffmpeg().get("quicktime_demux_available"):
+            source_video_mime_types.discard("video/quicktime")
+        downloaded: list[DownloadedInput] = []
+        for index, item in enumerate(inputs):
+            if not isinstance(item, dict):
+                raise ValueError("Storyboard FFmpeg input descriptor must be a JSON object.")
+            input_id = coerce_input_id(item)
+            kind = str(item.get("kind") or "").strip()
+            if kind not in ALLOWED_STORYBOARD_INPUT_KINDS:
+                raise ValueError(f"Unsupported Storyboard FFmpeg input kind: {kind}")
+            if kind in STORYBOARD_VIDEO_INPUT_KINDS:
+                allowed_mime = source_video_mime_types
+                max_bytes = MAX_STORYBOARD_VIDEO_INPUT_BYTES
+                category = "video"
+            elif kind in STORYBOARD_IMAGE_INPUT_KINDS:
+                allowed_mime = ALLOWED_STORYBOARD_MATTE_MIME_TYPES if item_is_storyboard_matte(item, processing) else ALLOWED_IMAGE_MIME_TYPES
+                max_bytes = MAX_STORYBOARD_IMAGE_INPUT_BYTES
+                category = "image"
+            else:
+                if kind in {"source_audio", "soundtrack_audio"}:
+                    allowed_mime = ALLOWED_STORYBOARD_AUDIO_CONTAINER_MIME_TYPES
+                    max_bytes = MAX_STORYBOARD_VIDEO_INPUT_BYTES
+                else:
+                    allowed_mime = ALLOWED_AUDIO_INPUT_MIME_TYPES
+                    max_bytes = MAX_STORYBOARD_AUDIO_INPUT_BYTES
+                category = "audio"
+            response = self.api.download_input(job_id, input_id)
+            mime_type = response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+            if mime_type not in allowed_mime:
+                if category == "image" and item_is_storyboard_matte(item, processing):
+                    raise ValueError(f"Overlay matte was provided but could not be applied: unsupported matte MIME type {mime_type or 'unknown'}.")
+                raise ValueError(f"Unsupported Storyboard FFmpeg {kind} MIME type: {mime_type}")
+            data = read_limited_response_content(response, input_id, max_bytes)
+            expected_size = item.get("bytes")
+            if expected_size is not None and len(data) != int(expected_size):
+                raise ValueError(f"Storyboard FFmpeg input {input_id} size mismatch.")
+            actual_sha = sha256_bytes(data)
+            expected_sha = str(item.get("sha256") or response.headers.get("X-Midom-SHA256") or "").strip().lower()
+            if expected_sha and actual_sha != expected_sha:
+                raise ValueError(f"Storyboard FFmpeg input {input_id} SHA-256 mismatch.")
+            path = temp_dir / safe_input_filename(item.get("filename"), input_id, mime_type)
+            path.write_bytes(data)
+            metadata = None
+            width = height = None
+            decoded_format = ""
+            duration_seconds = None
+            if category == "video":
+                metadata = validate_storyboard_video(path)
+            elif category == "image":
+                try:
+                    width, height, decoded_format = decode_image_info(path)
+                except Exception as exc:
+                    if item_is_storyboard_matte(item, processing):
+                        raise ValueError(f"Overlay matte was provided but could not be applied: decode failed: {exc}") from exc
+                    raise
+                if item_is_storyboard_matte(item, processing) and decoded_format not in {"PNG", "JPEG"}:
+                    raise ValueError(
+                        "Overlay matte was provided but could not be applied: "
+                        f"decoded matte format {decoded_format or 'unknown'} is not PNG or JPEG."
+                    )
+            else:
+                metadata = probe_audio_metadata(path)
+                duration_seconds = float(metadata.get("duration_seconds") or 0.0)
+            downloaded.append(
+                DownloadedInput(
+                    input_id=input_id,
+                    kind=kind,
+                    path=path,
+                    mime_type=mime_type,
+                    sha256=actual_sha,
+                    metadata=metadata,
+                    width=width,
+                    height=height,
+                    category=category,
+                    order=coerce_input_order(item.get("order", item.get("sequence", index)), index),
+                    role=str(item.get("role") or "").strip(),
+                    decoded_format=decoded_format,
+                    duration_seconds=duration_seconds,
+                    dbfileid=optional_int(item.get("dbfileid")),
+                    dbfile_id=optional_int(item.get("dbfile_id")),
+                    file_id=optional_int(item.get("file_id")),
+                )
+            )
+            log(f"Downloaded Storyboard FFmpeg input; job_id={job_id} input_id={input_id} kind={kind} category={category} mime_type={mime_type} bytes={len(data)}.")
+        video_count = sum(1 for item in downloaded if item.category == "video")
+        if operation_type == "multicam_final_assembly":
+            if video_count < 1:
+                raise ValueError("Storyboard final assembly requires at least one downloaded video input.")
+        elif operation_type == "replace_video_soundtrack":
+            audio_count = sum(1 for item in downloaded if item.category == "audio")
+            if video_count != 1:
+                raise ValueError(f"Storyboard replace_video_soundtrack requires exactly one downloaded source video input; got {video_count}.")
+            if audio_count != 1:
+                raise ValueError(f"Storyboard replace_video_soundtrack requires exactly one downloaded soundtrack audio input; got {audio_count}.")
+        elif operation_type == "segmented_media_segment_normalize":
+            source_video_count = sum(1 for item in downloaded if item.kind == "source_video")
+            image_count = sum(1 for item in downloaded if item.category == "image")
+            audio_count = sum(1 for item in downloaded if item.category == "audio")
+            if video_count != 1 or source_video_count != 1 or image_count or audio_count:
+                raise ValueError(
+                    "Storyboard segmented_media_segment_normalize requires exactly one downloaded source_video input; "
+                    f"got source_video={source_video_count}, video_inputs={video_count}, image_inputs={image_count}, audio_inputs={audio_count}."
+                )
+        elif operation_type in STORYBOARD_LOCAL_VIDEO_TAKE_OPERATION_TYPES:
+            render_mode = str(processing.get("render_mode") or "").strip().lower()
+            image_count = sum(1 for item in downloaded if item.category == "image")
+            audio_count = sum(1 for item in downloaded if item.category == "audio")
+            start_image_count = sum(1 for item in downloaded if item.kind == "start_image")
+            end_image_count = sum(1 for item in downloaded if item.kind == "end_image")
+            scene_audio_count = sum(1 for item in downloaded if item.kind == "scene_audio")
+            if render_mode not in {"one_image", "two_image_fade", "voice_over_video"}:
+                raise ValueError(f"Unsupported storyboard local video take render_mode: {render_mode or 'missing'}")
+            if render_mode == "voice_over_video":
+                if video_count != 1:
+                    raise ValueError(f"Storyboard local voice_over_video render requires exactly one downloaded source_video; got {video_count}.")
+                if scene_audio_count != 1 or audio_count != 1:
+                    raise ValueError(
+                        "Storyboard local voice_over_video render requires exactly one downloaded scene_audio and no other audio inputs; "
+                        f"got scene_audio={scene_audio_count}, audio_inputs={audio_count}."
+                    )
+                if start_image_count or end_image_count:
+                    raise ValueError(
+                        "Storyboard local voice_over_video render does not use downloaded start_image or end_image inputs; "
+                        f"got start_image={start_image_count}, end_image={end_image_count}, image_count={image_count}."
+                    )
+            else:
+                if video_count:
+                    raise ValueError(f"Storyboard local {render_mode} render does not support downloaded video inputs; got {video_count}.")
+                if audio_count:
+                    raise ValueError("Storyboard local video take one_image/two_image_fade does not support downloaded audio inputs yet.")
+            if coerce_bool(processing.get("pan_enabled"), False):
+                raise ValueError("Storyboard local video take pan_enabled=true is not supported by the bridge first pass.")
+            if render_mode == "one_image" and (start_image_count != 1 or end_image_count):
+                raise ValueError(
+                    "Storyboard local one_image render requires exactly one downloaded start_image and no end_image; "
+                    f"got start_image={start_image_count}, end_image={end_image_count}, image_count={image_count}."
+                )
+            if render_mode == "two_image_fade" and (start_image_count != 1 or end_image_count != 1):
+                raise ValueError(
+                    "Storyboard local two_image_fade render requires exactly one downloaded start_image and one end_image; "
+                    f"got start_image={start_image_count}, end_image={end_image_count}, image_count={image_count}."
+                )
+        elif operation_type in STORYBOARD_SINGLE_VIDEO_OPERATION_TYPES and video_count < 1:
+            raise ValueError(f"Storyboard operation {operation_type} requires at least one downloaded video input.")
+        return downloaded
+
 
 def safe_input_filename(filename: Any, input_id: int, mime_type: str) -> str:
     suffix = Path(str(filename or "")).suffix.lower()
-    if suffix not in {".png", ".jpg", ".jpeg", ".webp", ".mp4", ".mov"}:
+    if suffix not in {".png", ".jpg", ".jpeg", ".webp", ".mp4", ".mov", ".webm", *ALLOWED_AUDIO_SUFFIXES}:
         suffix = MIME_EXTENSION.get(mime_type, ".bin")
     return f"input-{int(input_id)}{suffix}"
+
+
+def coerce_input_order(value: Any, default: int) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        number = default
+    return max(0, min(10_000, number))
+
+
+def optional_int(value: Any) -> int | None:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number
+
+
+def optional_positive_candidate_float(value: Any, maximum: float) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number <= 0 or number > float(maximum):
+        return None
+    return number
+
+
+def item_is_storyboard_matte(item: dict[str, Any], processing: dict[str, Any] | None = None) -> bool:
+    role = str(item.get("role") or "").strip().lower()
+    kind = str(item.get("kind") or "").strip().lower()
+    if role in {"matte", "mask"} or kind in {"matte_image", "mask_image", "overlay_matte", "overlay_mask"}:
+        return True
+    if not isinstance(processing, dict):
+        return False
+    selector_values = {
+        processing.get("mask_dbfileid"),
+        processing.get("mask_input_id"),
+        processing.get("matte_dbfileid"),
+        processing.get("matte_input_id"),
+        processing.get("overlay_mask_dbfileid"),
+        processing.get("overlay_matte_dbfileid"),
+    }
+    selector_ids = set()
+    for value in selector_values:
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            continue
+        if number > 0:
+            selector_ids.add(number)
+    if not selector_ids:
+        return False
+    for value in (item.get("input_id"), item.get("dbfileid"), item.get("dbfile_id"), item.get("file_id")):
+        try:
+            if int(value) in selector_ids:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
 
 
 def candidate_incompatibility_reason(candidate: Any, config: WorkerConfig) -> str | None:
@@ -385,11 +648,96 @@ def candidate_incompatibility_reason(candidate: Any, config: WorkerConfig) -> st
     if media_type != "video":
         return f"unsupported media_type: {media_type}"
     summary = candidate.get("summary") if isinstance(candidate.get("summary"), dict) else {}
+    processing = candidate.get("processing") if isinstance(candidate.get("processing"), dict) else {}
     family = str(candidate.get("family") or summary.get("family") or "").strip().lower()
     processing_task = str(candidate.get("processing_task") or summary.get("processing_task") or "").strip().lower()
     processor_id = str(candidate.get("processor_id") or candidate.get("model_id") or summary.get("processor_id") or "").strip()
     if family and family != "media_processing":
         return f"unsupported family: {family}"
+    operation_type = storyboard_operation_type(candidate)
+    if operation_type in STORYBOARD_FFMPEG_OPERATION_TYPES or processing_task == STORYBOARD_FFMPEG_PROCESSING_TASK or processor_id in STORYBOARD_FFMPEG_PROCESSOR_IDS:
+        if operation_type not in STORYBOARD_FFMPEG_OPERATION_TYPES:
+            return f"unsupported storyboard operation_type: {operation_type}"
+        if processor_id and processor_id not in STORYBOARD_FFMPEG_PROCESSOR_IDS:
+            return f"unsupported storyboard processor_id: {processor_id}"
+        try:
+            output_count = int(summary.get("output_count") or 1)
+        except (TypeError, ValueError):
+            return f"invalid storyboard output_count: {summary.get('output_count')}"
+        if output_count != 1:
+            return f"unsupported storyboard output_count: {output_count}"
+        output_format = str(summary.get("output_format") or summary.get("format") or "mp4").strip().lower()
+        if output_format != "mp4":
+            return f"unsupported storyboard output_format: {output_format}"
+        video_count = coerce_input_order(summary.get("video_input_count", summary.get("source_video_count", summary.get("input_video_count"))), 1)
+        if operation_type == "multicam_final_assembly":
+            if video_count < 1:
+                return "final assembly requires video inputs"
+        elif operation_type == "replace_video_soundtrack":
+            if video_count != 1:
+                return f"replace_video_soundtrack requires exactly one source video input; got {video_count}"
+            audio_count = coerce_input_order(summary.get("audio_input_count", summary.get("soundtrack_audio_count")), 1)
+            if audio_count != 1:
+                return f"replace_video_soundtrack requires exactly one soundtrack audio input; got {audio_count}"
+        elif operation_type == "segmented_media_segment_normalize":
+            source_video_count = coerce_input_order(summary.get("source_video_count"), video_count)
+            if video_count != 1 or source_video_count != 1:
+                return (
+                    "segmented_media_segment_normalize requires exactly one source_video input; "
+                    f"got source_video={source_video_count}, video_inputs={video_count}"
+                )
+            resize_mode = str(candidate.get("resize_mode") or processing.get("resize_mode") or summary.get("resize_mode") or "scale_to_cover_crop").strip().lower()
+            if resize_mode not in {"scale_to_cover_crop", "cover", "crop"}:
+                return f"segmented_media_segment_normalize unsupported resize_mode: {resize_mode}"
+        elif operation_type in STORYBOARD_LOCAL_VIDEO_TAKE_OPERATION_TYPES:
+            render_mode = str(
+                candidate.get("render_mode") or processing.get("render_mode") or summary.get("render_mode") or ""
+            ).strip().lower()
+            if render_mode not in {"one_image", "two_image_fade", "voice_over_video"}:
+                return f"{operation_type} unsupported render_mode: {render_mode or 'missing'}"
+            if coerce_bool(candidate.get("pan_enabled", processing.get("pan_enabled", summary.get("pan_enabled"))), False):
+                return "local video take pan_enabled=true is not supported"
+            audio_count = coerce_input_order(summary.get("audio_input_count", summary.get("soundtrack_audio_count")), 0)
+            if render_mode == "voice_over_video":
+                if video_count != 1:
+                    return f"voice_over_video requires exactly one source video input; got {video_count}"
+                scene_audio_count = coerce_input_order(summary.get("scene_audio_count"), 1)
+                if scene_audio_count != 1 or audio_count != 1:
+                    return f"voice_over_video requires exactly one scene_audio input; got scene_audio={scene_audio_count}, audio_inputs={audio_count}"
+                transition = str(
+                    candidate.get("video_transition")
+                    or processing.get("video_transition")
+                    or summary.get("video_transition")
+                    or ""
+                ).strip().lower()
+                if transition not in {"", "none"}:
+                    return f"voice_over_video unsupported video_transition: {transition}"
+                duration_value = candidate.get("duration_seconds", processing.get("duration_seconds", summary.get("duration_seconds")))
+                if optional_positive_candidate_float(duration_value, MAX_STORYBOARD_VIDEO_DURATION_SECONDS) is None:
+                    return "voice_over_video requires duration_seconds"
+                return None
+            if audio_count:
+                return f"{render_mode} local video take does not support audio inputs yet"
+            image_count_value = summary.get("image_input_count", summary.get("source_image_count"))
+            start_image_value = summary.get("start_image_count")
+            end_image_value = summary.get("end_image_count")
+            if render_mode == "one_image":
+                if start_image_value is not None and coerce_input_order(start_image_value, 0) != 1:
+                    return f"one_image requires exactly one start_image input; got {start_image_value}"
+                if end_image_value is not None and coerce_input_order(end_image_value, 0) != 0:
+                    return f"one_image does not support end_image inputs; got {end_image_value}"
+                if image_count_value is not None and coerce_input_order(image_count_value, 0) < 1:
+                    return "one_image requires at least one image input"
+            elif render_mode == "two_image_fade":
+                if start_image_value is not None and coerce_input_order(start_image_value, 0) != 1:
+                    return f"two_image_fade requires exactly one start_image input; got {start_image_value}"
+                if end_image_value is not None and coerce_input_order(end_image_value, 0) != 1:
+                    return f"two_image_fade requires exactly one end_image input; got {end_image_value}"
+                if image_count_value is not None and coerce_input_order(image_count_value, 0) < 2:
+                    return "two_image_fade requires at least two image inputs"
+        elif operation_type in STORYBOARD_SINGLE_VIDEO_OPERATION_TYPES and video_count < 1:
+            return f"{operation_type} requires a video input"
+        return None
     if processing_task and processing_task != "event_video_processing":
         return f"unsupported processing_task: {processing_task}"
     if processor_id and processor_id != "event_video_ffmpeg_processor":
